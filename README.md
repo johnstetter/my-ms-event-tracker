@@ -153,7 +153,7 @@ Everything runs on free tiers.
    supabase link --project-ref <your-project-ref>
    supabase db push
    ```
-   For a personal instance, consider disabling new sign-ups (*Authentication → Providers → Email*) once your own account exists.
+   Create your account in the Supabase dashboard (*Authentication → Users → Add user*), then turn off *Allow new users to sign up* (*Authentication → Sign In / Providers*). The app hides its sign-up link unless it's built with `VITE_ENABLE_SIGNUP=true`.
 2. **Cloudflare Pages:** create a Pages project named `my-ms-event-tracker`, or change `--project-name` in `.github/workflows/deploy.yml`.
 3. **GitHub Actions secrets:** add `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 4. **Push to `main`:** the workflow tests, builds and deploys.
