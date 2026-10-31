@@ -1,190 +1,225 @@
-# MS Symptom Tracker
+# MS Event Tracker
 
-A privacy-focused web application for tracking Multiple Sclerosis symptoms, mood, and interventions. Built for fast mobile logging during episodes with comprehensive tracking capabilities.
+**Log a muscle spasm in five seconds. Fill in the details later.**
 
-![Built with SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=flat&logo=svelte&logoColor=white)
-![Powered by Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=flat&logo=supabase&logoColor=white)
-![Deployed on Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=flat&logo=cloudflare&logoColor=white)
+A privacy-focused web app for people living with Multiple Sclerosis to record symptoms as they happen (spasms, pain, bowel movements, panic attacks, anxiety, intrusive thoughts), note what helped, and hand a clean history to their care team.
 
-## ⚡ Quick Start
+![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=flat&logo=svelte&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=flat&logo=supabase&logoColor=white)
+![Cloudflare Pages](https://img.shields.io/badge/Cloudflare_Pages-F38020?style=flat&logo=cloudflare&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
+---
+
+## Why
+
+When a spasm or panic attack hits, nobody wants to fill in a form. Most health trackers ask for everything up front; this one splits logging into two moments:
+
+1. **In the moment**: tap the event type, set severity, optionally tap where it hurts. Done.
+2. **Afterwards**: add interventions (baclofen, stretching, a breathing exercise, cannabis…), notes, and mark the episode resolved so its duration is recorded.
+
+Over weeks, that becomes a timeline you can filter, search, and export as CSV or PDF for a neurologist appointment.
+
+## Features
+
+| | |
+|---|---|
+| **Quick log** | One-screen capture with a 1–10 severity slider and tappable body locations. Built for a phone, one-handed. |
+| **Physical & mental-health events** | Muscle spasm, pain episode, bowel movement, panic attack, anxiety, intrusive thought, plus your own custom types with custom fields. |
+| **Context-aware interventions** | The picker shows interventions relevant to the event type (grounding and breathing for panic, stretching for spasms), with universal items like rest and medications always available. |
+| **Resolve later** | Open episodes stay on the home screen until you add what helped and mark them resolved. Point-in-time types like bowel movements resolve automatically. |
+| **Timeline & notes** | Per-event timeline of interventions and free-text notes. |
+| **History** | Filter by event type, date range and severity; search; paginate. |
+| **Export** | CSV for spreadsheets, PDF summary report for providers. |
+| **Customisable** | Admin screens for your own event types, body locations and interventions, and for scoping interventions to event types. |
+| **Offline queue** | Quick logs made without a connection are queued locally and synced when you're back online. |
+| **Private by design** | Row Level Security on every table, no analytics shipped, self-hostable on free tiers. |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    user(["📱 Browser<br/>(phone or desktop)<br/><br/>localStorage:<br/>offline queue + lookup cache"])
+
+    subgraph cf["Cloudflare Pages"]
+        direction TB
+        assets["Static assets<br/>Svelte UI bundle"]
+        fn["SvelteKit server<br/>(Pages Functions)<br/><br/>session check · hooks.server.ts<br/>/auth/callback<br/>/admin route guard"]
+    end
+
+    subgraph sb["Supabase"]
+        direction TB
+        auth["Auth<br/>email + password"]
+        api["PostgREST API"]
+        db[("Postgres<br/>Row Level Security<br/>on every table")]
+        api --> db
+        auth -. "auth.uid()" .-> db
+    end
+
+    gh["GitHub Actions<br/>check → test → build"]
+
+    user -->|"pages + SSR<br/>(cookie session)"| cf
+    user -->|"supabase-js:<br/>reads & writes"| api
+    user -->|"sign in / sign up"| auth
+    fn -->|"validate session<br/>(@supabase/ssr)"| auth
+    gh -->|"wrangler pages deploy"| cf
+```
+
+**How it fits together**
+
+- **The browser talks to Supabase directly** using `supabase-js` and the public anon key. There's no custom API layer: authorization is enforced inside Postgres by Row Level Security keyed on `auth.uid()`, so a signed-in user can only ever read or write their own events.
+- **The SvelteKit server** runs as Cloudflare Pages Functions (`@sveltejs/adapter-cloudflare`) and manages cookie-based sessions with `@supabase/ssr`. Every request re-validates the user with `getUser()` in `hooks.server.ts`, and a server-side guard protects `/admin`.
+- **Offline:** quick logs made without a connection go into a `localStorage` queue and replay when the browser comes back online. Event types, locations and interventions are cached locally for fast startup.
+- **Deploys:** pushes to `main` run type checking, tests and a production build in GitHub Actions, then ship with `wrangler pages deploy`.
+
+### Data model
+
+```mermaid
+erDiagram
+    EVENT_TYPES ||--o{ EVENTS : categorises
+    EVENTS ||--o{ EVENT_LOCATIONS : "where"
+    BODY_LOCATIONS ||--o{ EVENT_LOCATIONS : ""
+    EVENTS ||--o{ EVENT_INTERVENTIONS : "what helped"
+    INTERVENTIONS ||--o{ EVENT_INTERVENTIONS : ""
+    EVENTS ||--o{ EVENT_NOTES : timeline
+    INTERVENTIONS ||--o{ INTERVENTION_EVENT_TYPES : "scoped to"
+    EVENT_TYPES ||--o{ INTERVENTION_EVENT_TYPES : ""
+
+    EVENTS {
+        uuid user_id
+        timestamptz started_at
+        timestamptz ended_at "NULL while open"
+        int severity "1-10"
+        jsonb attributes "custom fields"
+    }
+    EVENT_TYPES {
+        uuid user_id "NULL = built-in"
+        text slug
+        bool auto_resolve
+        jsonb custom_fields
+    }
+    INTERVENTIONS {
+        uuid user_id "NULL = built-in"
+        text name
+        text category
+    }
+    BODY_LOCATIONS {
+        uuid user_id "NULL = built-in"
+        text name
+        text region
+    }
+```
+
+Event types, body locations and interventions with a `NULL` `user_id` are built-in defaults visible to everyone; rows with a `user_id` are that user's own additions. See [Database Schema](docs/development/database-schema.md) for the full design and RLS policies.
+
+## Quick start (local)
+
+Prerequisites: [Devbox](https://www.jetify.com/devbox) (provides Node 24, the Supabase CLI and Wrangler) and Docker.
 
 ```bash
-# Clone and enter development environment
 git clone https://github.com/johnstetter/my-ms-event-tracker.git
 cd my-ms-event-tracker
 devbox shell
 
-# Install dependencies and start local development
 npm install
-supabase start
+supabase start                      # local Postgres, Auth and Studio; applies migrations + seed
+cp .env.local.example .env.local    # point the app at the local stack
 npm run dev
 ```
 
-## 🎯 Key Features
-
-- **⚡ 5-Second Logging**: Quick capture during muscle spasms, pain episodes, and mental-health moments (panic attacks, intrusive thoughts, anxiety)
-- **🧩 Context-Aware Picker**: The intervention picker filters by the active event type — physical events show physical interventions, mental-health events show grounding/breathing/journaling, with universal items (rest, medications) shared across all
-- **📱 Mobile-First**: Touch-optimized interface for phone use
-- **📋 Event History**: Comprehensive browsing with filtering, search, and pagination
-- **💊 Intervention Tracking**: Log treatments and medications with effectiveness tracking
-- **⚙️ Admin Interface**: Full CRUD operations for custom event types, body locations, and interventions, with symmetric scope-tag editors on both sides
-- **📊 Structured Logging**: Healthcare-appropriate observability with privacy controls
-- **🔐 Privacy-Focused**: Your data stays in your control via personal Supabase instance
-- **📊 Export Ready**: CSV/Excel export for medical providers
-- **🏠 Home Assistant Ready**: Voice integration for hands-free logging *(planned)*
-
-## 🏗️ Architecture
+Open **http://localhost:5273** and sign in with the seeded dev account:
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   SvelteKit     │────▶│ Cloudflare Pages│────▶│   Supabase      │
-│   Frontend      │     │   (Hosting)     │     │  (Database)     │
-│  - Quick Log UI │     │  - Auto Deploy │     │  - Auth (Google)│
-│  - Event Mgmt   │     │  - Edge Cache   │     │  - RLS Policies │
-│  - CSV Export   │     │  - Environment  │     │  - Real-time    │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+email:    dev@local.test
+password: devpassword
 ```
 
-**Tech Stack**: SvelteKit + TypeScript + Supabase + Cloudflare Pages + Devbox + Vitest + Structured Logging
+| Local service | URL |
+|---|---|
+| App (Vite) | http://localhost:5273 |
+| Supabase API | http://127.0.0.1:54421 |
+| Supabase Studio | http://127.0.0.1:54423 |
+| Inbucket (auth emails) | http://127.0.0.1:54424 |
 
-## 📖 Documentation
+Local ports are shifted +100 from the Supabase defaults so this stack can run alongside another local Supabase project. `supabase db reset` rebuilds the database from migrations and re-seeds it.
 
-### 👥 User Guides
-- **[User Guide](docs/user-guide.md)** - How to use the application, feature walkthrough, and tips
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+## Deploy your own
 
-### 🚀 Getting Started
-- **[Development Setup](docs/setup/development-environment.md)** - Local environment with Devbox and Supabase
-- **[OAuth Configuration](docs/setup/oauth-setup.md)** - Google authentication setup
+Everything runs on free tiers.
 
-### 🛠️ Development
-- **[Developer Guide](docs/development/developer-guide.md)** - Architecture, workflows, and best practices
-- **[Database Schema](docs/development/database-schema.md)** - Complete database design and structure
-- **[API Design](docs/development/api-design.md)** - Home Assistant integration endpoints
-- **[Logging System](docs/development/logging.md)** - Structured logging with healthcare privacy controls
+1. **Supabase:** create a project, then apply the schema:
+   ```bash
+   supabase link --project-ref <your-project-ref>
+   supabase db push
+   ```
+   For a personal instance, consider disabling new sign-ups (*Authentication → Providers → Email*) once your own account exists.
+2. **Cloudflare Pages:** create a Pages project named `my-ms-event-tracker`, or change `--project-name` in `.github/workflows/deploy.yml`.
+3. **GitHub Actions secrets:** add `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+4. **Push to `main`:** the workflow tests, builds and deploys.
 
-### 🚀 Deployment
-- **[Cloudflare Pages](docs/deployment/cloudflare-pages.md)** - Automated deployment with GitHub Actions
+Details: [Cloudflare Pages deployment](docs/deployment/cloudflare-pages.md) · [Environment variables](docs/deployment/environment-variables.md)
 
-### 📋 Project Documentation
-- **[Full Documentation Index](docs/README.md)** - Complete documentation overview
+## Privacy & security
 
-## 🏃‍♂️ Development Workflow
+- **Your data, your instance.** Each deployment uses its own Supabase project; nothing is sent anywhere else.
+- **Row Level Security** on every table, so isolation is enforced by the database, not just the UI.
+- **Server-validated sessions:** cookies are re-checked with Supabase on every request.
+- **No analytics** ship by default, and logs redact sensitive fields.
+- **Security headers:** CSP, `frame-ancestors 'none'`, HSTS and more via [`_headers`](_headers).
+- **Export any time:** your full history as CSV or PDF.
 
-This project follows a **learning-focused development workflow** that emphasizes professional practices:
+This is a personal self-tracking tool. It is not a medical device and not a HIPAA-covered service.
+
+## Commands
 
 ```bash
-# 1. Always create GitHub issue first
-gh issue create --title "Add pain tracking feature"
-
-# 2. Create feature branch (never work on main)
-git checkout -b feature/123-pain-tracking
-
-# 3. Develop with local Supabase
-supabase start
-npm run dev
-
-# 4. Test and commit
-npm run check && npm run test:run && npm run build
-git commit -m "feat: Add pain tracking interface"
-
-# 5. Create PR and merge
-git push && gh pr create
+npm run dev            # dev server on :5273
+npm run check          # svelte-check + TypeScript
+npm run test:run       # Vitest, once
+npm test               # Vitest, watch mode
+npm run test:coverage  # coverage report
+npm run build          # production build (Cloudflare adapter)
+npm run deploy         # build + wrangler pages deploy (manual)
 ```
 
-**Why this matters**: This project serves as both a health tracking tool and a **learning platform for professional development workflows**. The process discipline is as important as the technology.
+## Roadmap
 
-## 📊 Current Status
-
-### ✅ Completed (Phase 1)
-- [x] Database schema with full health tracking support
-- [x] Local development environment (Devbox + Supabase)
-- [x] Authentication infrastructure (Google OAuth)
-- [x] GitHub Actions deployment pipeline
-- [x] Documentation reorganization
-- [x] Comprehensive testing infrastructure
-
-### ✅ Completed (Phase 2)
-- [x] Quick symptom logging interface
-- [x] Intervention tracking
-- [x] Event resolution workflow
-- [x] **Event History Page** - Comprehensive event browsing with filtering, pagination, search, and mobile-responsive design
-
-### ✅ Completed (Phase 3)
-- [x] **Admin Interface** - Complete CRUD operations for custom event types, body locations, and interventions
-- [x] CSV/Excel export
-- [x] **Structured Logging System** - Healthcare-appropriate observability with privacy controls
-
-### ✅ Completed (Phase 4 — Foundation hardening)
-- [x] **Server-side auth guards** - Cookie-based sessions via `@supabase/ssr` and route-level redirects
-- [x] **Component type tightening** - Replaced `any[]` with generated Supabase types in event-display surface
-- [x] **Critical-path test coverage** - Tests for `createQuickEvent`, offline queue, and CSV export
-- [x] **Mental-health event types & context-aware picker** - Panic / anxiety / intrusive-thought logging with intervention scope tags
-- [x] **Custom event-type slug uniqueness fix**
-
-### 🚧 In Progress / Up Next
-- [ ] Calendar view integration
+- [x] Quick logging, interventions and resolution workflow
+- [x] History with filtering, search and pagination
+- [x] CSV and PDF export
+- [x] Admin for custom event types, locations and interventions
+- [x] Mental-health event types with scoped interventions
+- [x] Server-side auth guards and critical-path test coverage
+- [ ] Calendar view
 - [ ] Pattern analysis and statistics
+- [ ] Progressive Web App (installable, richer offline support)
+- [ ] Home Assistant voice logging ("log a spasm"); see [API design](docs/development/api-design.md)
 
-### 📋 Planned (Phase 5)
-- [ ] Home Assistant voice integration
-- [ ] Progressive Web App features
-- [ ] Advanced export features with data visualization
+## Documentation
 
-## 🏥 Health Data Privacy
+| Topic | |
+|---|---|
+| Using the app | [User Guide](docs/user-guide.md) · [Troubleshooting](docs/troubleshooting.md) |
+| Local setup | [Development Environment](docs/setup/development-environment.md) · [OAuth Setup](docs/setup/oauth-setup.md) |
+| Internals | [Developer Guide](docs/development/developer-guide.md) · [Database Schema](docs/development/database-schema.md) · [Logging](docs/development/logging.md) |
+| Everything | [Docs index](docs/README.md) |
 
-**Privacy-by-design architecture**:
-- **Your Supabase instance**: Complete data control
-- **No tracking**: No analytics transports ship by default; intentional analytics integration is a separate opt-in
-- **Row Level Security**: Database-enforced data isolation
-- **Local development**: Full offline capability
-- **Export freedom**: Always own your data
+## Contributing
 
-## 🤝 Contributing
+Issues and pull requests are welcome.
 
-1. **Create an issue first** - No exceptions, even for obvious fixes
-2. **Feature branches only** - Never commit directly to main
-3. **Test locally** - Run `npm run test:run` before committing
-4. **Follow commit conventions** - Structured messages for clean history
-5. **Add tests for new features** - Maintain test coverage standards
-6. **Update docs** - Keep documentation current
+1. Open an issue describing the bug or feature.
+2. Branch from `main` as `type/<issue>-short-name`, e.g. `feat/12-calendar-view`.
+3. Run `npm run check && npm run test:run && npm run build` before pushing.
+4. Use [Conventional Commits](https://www.conventionalcommits.org/) and reference the issue in your PR.
 
-See [Developer Guide](docs/development/developer-guide.md) for detailed contributing guidelines.
+Please don't include real health data in issues, screenshots or test fixtures.
 
-## 🛠️ Available Commands
+## License
 
-```bash
-# Development
-npm run dev                # Start development server
-npm run check              # TypeScript type checking
-npm run build              # Build for production
-
-# Testing
-npm test                   # Run tests in watch mode
-npm run test:run           # Run all tests once
-npm run test:coverage      # Generate test coverage report
-npm run test:ui            # Open interactive test UI
-
-# Environment management
-supabase start             # Start local database stack
-supabase stop              # Stop local environment
-supabase db reset          # Fresh database with migrations
-
-# Deployment
-git push origin main       # Triggers auto-deployment
-npm run deploy             # Manual Cloudflare deployment
-```
-
-## 🆘 Need Help?
-
-- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
-- **[GitHub Issues](https://github.com/johnstetter/my-ms-event-tracker/issues)** - Bug reports and feature requests
-- **[Documentation](docs/README.md)** - Comprehensive guides and references
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
+[MIT](LICENSE)
 
 ---
 
-**⚠️ Medical Disclaimer**: This application is for personal health tracking only and is not intended as a substitute for professional medical care. Always consult healthcare providers for medical decisions.
+> **Medical disclaimer:** This application is for personal health tracking only and is not a substitute for professional medical advice, diagnosis or treatment. Always consult your healthcare providers about medical decisions.
