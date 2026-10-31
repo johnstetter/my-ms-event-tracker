@@ -3,6 +3,10 @@
 
 	type Mode = 'sign-in' | 'sign-up' | 'reset';
 
+	// Sign-up is hidden unless explicitly enabled at build time, e.g. to create
+	// the first account on a new deployment. Disable sign-ups in Supabase too.
+	const signupEnabled = import.meta.env.VITE_ENABLE_SIGNUP === 'true';
+
 	let mode = $state<Mode>('sign-in');
 	let email = $state('');
 	let password = $state('');
@@ -150,9 +154,11 @@
 
 		<div class="auth-switch">
 			{#if mode === 'sign-in'}
-				<button type="button" class="link" onclick={() => switchMode('sign-up')}>
-					Need an account? Sign up
-				</button>
+				{#if signupEnabled}
+					<button type="button" class="link" onclick={() => switchMode('sign-up')}>
+						Need an account? Sign up
+					</button>
+				{/if}
 				<button type="button" class="link" onclick={() => switchMode('reset')}>
 					Forgot password?
 				</button>
