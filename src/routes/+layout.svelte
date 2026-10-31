@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import '../app.css';
+	import BuildFooter from '$lib/components/BuildFooter.svelte';
 
 	// Import auth stores to ensure they're initialized
 	import '$lib/stores/auth.js';
@@ -38,3 +39,5 @@
 </svelte:head>
 
 {@render children()}
+
+<BuildFooter />
