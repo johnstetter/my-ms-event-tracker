@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetpack-io/devbox/0.12.0/.schema/devbox.schema.json",
+  "packages": [
+    "nodejs@24.12.0",
+    "wrangler@4.57.0",
+    "supabase-cli@2.90.0"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'Welcome to my-ms-event-tracker dev environment!'",
+      "echo 'Node.js version:' && node --version",
+      "echo 'Supabase CLI version:' && supabase --version",
+      "echo ''",
+      "echo '🚀 Quick Start Commands:'",
+      "echo '  ./scripts/dev-local.sh   - Start local Supabase + switch to local config'",
+      "echo '  ./scripts/dev-stop.sh    - Stop local Supabase'",
+      "echo '  ./scripts/use-local.sh   - Switch to local environment'",
+      "echo '  ./scripts/use-prod.sh    - Switch to production environment'",
+      "echo ''",
+      "echo '📊 Supabase Commands:'",
+      "echo '  supabase start           - Start local Supabase'",
+      "echo '  supabase stop            - Stop local Supabase'",
+      "echo '  supabase db reset        - Reset local database'",
+      "echo '  open http://127.0.0.1:54423  - Open Supabase Studio'",
+      "echo ''",
+      "echo '📦 App Commands (when you add package.json):'",
+      "echo '  npm install              - Install dependencies'",
+      "echo '  npm run dev              - Start development server'",
+      "echo '  npm run build            - Build for production'",
+      "echo ''",
+      "echo '📖 Read DEVELOPMENT.md for detailed setup guide'"
+    ]
+  }
+}

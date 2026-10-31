@@ -1,0 +1,106 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Cloudflare Pages
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type checking
+        run: npm run check
+        env:
+          # Environment variables needed for TypeScript to recognize imports
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Run tests
+        run: npm run test:run
+        env:
+          # Environment variables for testing
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build application
+        run: npm run build
+        env:
+          # Public environment variables for build
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy .svelte-kit/cloudflare --project-name=my-ms-event-tracker
+
+  test:
+    runs-on: ubuntu-latest
+    name: Run Tests
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type checking
+        run: npm run check
+        env:
+          # Environment variables needed for TypeScript to recognize imports
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL_STAGING || secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY_STAGING || secrets.PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Run tests
+        run: npm run test:run
+        env:
+          # Environment variables for testing
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL_STAGING || secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY_STAGING || secrets.PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build application (test)
+        run: npm run build
+        env:
+          # Use test/staging environment variables for PR builds
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL_STAGING || secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY_STAGING || secrets.PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Test build output
+        run: |
+          if [ ! -d ".svelte-kit/cloudflare" ]; then
+            echo "Build output directory not found!"
+            exit 1
+          fi
+          echo "Build output created successfully"
