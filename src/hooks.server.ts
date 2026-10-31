@@ -1,6 +1,18 @@
 import { createSupabaseServerClient } from '$lib/supabase.server.js';
 import type { Handle } from '@sveltejs/kit';
 
+// Cloudflare Pages applies `_headers` to static assets only, not to responses
+// rendered by SvelteKit, so pages need their security headers set here.
+// The rest of the CSP lives in the <meta> tag in app.html; only frame-ancestors
+// is set here because it can't be delivered via <meta>.
+const SECURITY_HEADERS: Record<string, string> = {
+	'Content-Security-Policy': "frame-ancestors 'none'",
+	'X-Frame-Options': 'DENY',
+	'X-Content-Type-Options': 'nosniff',
+	'Referrer-Policy': 'strict-origin-when-cross-origin',
+	'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'
+};
+
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.supabase = createSupabaseServerClient(event.cookies);
 
@@ -30,9 +42,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.session = session;
 	event.locals.user = user;
 
-	return resolve(event, {
+	const response = await resolve(event, {
 		filterSerializedResponseHeaders(name) {
 			return name === 'content-range' || name === 'x-supabase-api-version';
 		}
 	});
+
+	for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+		response.headers.set(name, value);
+	}
+
+	return response;
 };

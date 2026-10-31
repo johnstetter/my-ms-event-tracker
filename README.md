@@ -166,7 +166,7 @@ Details: [Cloudflare Pages deployment](docs/deployment/cloudflare-pages.md) · [
 - **Row Level Security** on every table, so isolation is enforced by the database, not just the UI.
 - **Server-validated sessions:** cookies are re-checked with Supabase on every request.
 - **No analytics** ship by default, and logs redact sensitive fields.
-- **Security headers:** CSP, `frame-ancestors 'none'`, HSTS and more via [`_headers`](_headers).
+- **Security headers:** CSP, `frame-ancestors 'none'`, HSTS and more, set in [`hooks.server.ts`](src/hooks.server.ts) for pages and [`_headers`](_headers) for static assets.
 - **Export any time:** your full history as CSV or PDF.
 
 This is a personal self-tracking tool. It is not a medical device and not a HIPAA-covered service.
